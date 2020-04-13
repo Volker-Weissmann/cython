@@ -970,6 +970,7 @@ class StringConst(object):
     # py_strings       {(identifier, encoding) : PyStringConst}
 
     def __init__(self, cname, text, byte_string):
+        #print("StringConst init", cname, text, byte_string)
         self.cname = cname
         self.text = text
         self.escaped_value = StringEncoding.escape_byte_string(byte_string)
@@ -1039,6 +1040,7 @@ class StringConst(object):
         py_string = PyStringConst(
             pystring_cname, encoding, is_unicode, is_str, py3str_cstring, intern)
         self.py_strings[key] = py_string
+        #print("1042 get_py_string_const", encoding, identifier, is_str, py3str_cstring, self.py_strings, self. text, py_string.cname, pystring_cname)
         return py_string
 
 class PyStringConst(object):
@@ -1330,6 +1332,7 @@ class GlobalState(object):
             c_string = self.get_string_const(text)
         py_string = c_string.get_py_string_const(
             text.encoding, identifier, is_str, py3str_cstring)
+        #print("py_string", py_string.cname, is_str, unicode_value, c_string)
         return py_string
 
     def get_interned_identifier(self, text):
@@ -1337,6 +1340,7 @@ class GlobalState(object):
 
     def new_string_const(self, text, byte_string):
         cname = self.new_string_const_cname(byte_string)
+        #print("new_string_const", cname, text)
         c = StringConst(cname, text, byte_string)
         self.string_const_index[byte_string] = c
         return c
@@ -1798,6 +1802,8 @@ class CCodeWriter(object):
         return self.buffer.getvalue()
 
     def write(self, s):
+        #if "__pyx_n_s_varA" in s:
+        #    breakpoint()
         # also put invalid markers (lineno 0), to indicate that those lines
         # have no Cython source code correspondence
         cython_lineno = self.last_marked_pos[1] if self.last_marked_pos else 0

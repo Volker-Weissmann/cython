@@ -3363,7 +3363,17 @@ class DebugTransform(CythonTransform):
         # tells visit_NameNode whether it should register step-into functions
         self.register_stepinto = False
 
+    def my_process_children(self, parent, attrs=None):
+        # fast cdef entry point for calls from Cython subclasses
+        result = self._visitchildren(parent, attrs)
+        for attr, newnode in result.items():
+            if type(newnode) is list:
+                newnode = self._flatten_list(newnode)
+            setattr(parent, attr, newnode)
+        return result
+    
     def visit_ModuleNode(self, node):
+        print("visit_ModuleNode", node)
         self.tb.module_name = node.full_module_name
         attrs = dict(
             module_name=node.full_module_name,
@@ -3375,7 +3385,30 @@ class DebugTransform(CythonTransform):
         # serialize functions
         self.tb.start('Functions')
         # First, serialize functions normally...
+        #breakpoint()
         self.visitchildren(node)
+        # parent = node
+        # attrs = None
+        
+        # result = self._visitchildren(parent, attrs)
+        # for attr, newnode in result.items():
+        #     if type(newnode) is list:
+        #         newnode = self._flatten_list(newnode)
+        #     setattr(parent, attr, newnode)
+
+        # result = {}
+        # for attr in node.child_attrs:
+        #     if attrs is not None and attr not in None: continue
+        #     child = getattr(node, attr)
+        #     if child is not None:
+        #         if type(child) is list:
+        #             childretval = [self._visitchild(x, node, attr, idx) for idx, x in enumerate(child)]
+        #         else:
+        #             childretval = self._visitchild(child, node, attr, None)
+        #             assert not isinstance(childretval, list), 'Cannot insert list here: %s in %r' % (attr, node)
+        #         result[attr] = childretval
+
+        # code.enter_cfunc_scope(self.scope)
 
         # ... then, serialize nested functions
         for nested_funcdef in self.nested_funcdefs:
@@ -3404,6 +3437,7 @@ class DebugTransform(CythonTransform):
         return node
 
     def visit_FuncDefNode(self, node):
+        print("visit_FuncDefNode", node)
         self.visited.add(node.local_scope.qualified_name)
 
         if getattr(node, 'is_wrapper', False):
@@ -3436,6 +3470,7 @@ class DebugTransform(CythonTransform):
         self.tb.start('Function', attrs=attrs)
 
         self.tb.start('Locals')
+        self.code.enter_cfunc_scope(node.local_scope)
         self.serialize_local_variables(node.local_scope.entries)
         self.tb.end('Locals')
 
@@ -3455,6 +3490,7 @@ class DebugTransform(CythonTransform):
         return node
 
     def visit_NameNode(self, node):
+        print("visit_NameNode", node, node.name)
         if (self.register_stepinto and
             node.type is not None and
             node.type.is_cfunction and
@@ -3473,19 +3509,25 @@ class DebugTransform(CythonTransform):
         return node
 
     def serialize_modulenode_as_function(self, node):
+        print("serialize_modulenode_as_function", node)
         """
         Serialize the module-level code as a function so the debugger will know
         it's a "relevant frame" and it will know where to set the breakpoint
         for 'break modulename'.
         """
+
+        #node: type(node) <class 'Cython.Compiler.ModuleNode.ModuleNode'>
         name = node.full_module_name.rpartition('.')[-1]
 
         cname_py2 = 'init' + name
         cname_py3 = 'PyInit_' + name
 
+        print("serialize_modulenode_as_function:", node.module_init_func_cname())
+        
+
         py2_attrs = dict(
             name=name,
-            cname=cname_py2,
+            cname=node.module_init_func_cname(),
             pf_cname='',
             # Ignore the qualified_name, breakpoints should be set using
             # `cy break modulename:lineno` for module-level breakpoints.
@@ -3494,10 +3536,10 @@ class DebugTransform(CythonTransform):
             is_initmodule_function="True",
         )
 
-        py3_attrs = dict(py2_attrs, cname=cname_py3)
+        #py3_attrs = dict(py2_attrs, cname=cname_py3)
 
         self._serialize_modulenode_as_function(node, py2_attrs)
-        self._serialize_modulenode_as_function(node, py3_attrs)
+        #self._serialize_modulenode_as_function(node, py3_attrs)
 
     def _serialize_modulenode_as_function(self, node, attrs):
         self.tb.start('Function', attrs=attrs)
@@ -3518,6 +3560,7 @@ class DebugTransform(CythonTransform):
         self.tb.end('Function')
 
     def serialize_local_variables(self, entries):
+        print("serialize_local_variables", entries)
         for entry in entries.values():
             if not entry.cname:
                 # not a local variable
@@ -3527,7 +3570,11 @@ class DebugTransform(CythonTransform):
             else:
                 vartype = 'CObject'
 
-            if entry.from_closure:
+            print("###################### ParseTreeTransform")
+            if entry.is_pyglobal:
+                cname = self.code.intern_identifier(entry.name)
+                qname = entry.qualified_name
+            elif entry.from_closure:
                 # We're dealing with a closure where a variable from an outer
                 # scope is accessed, get it from the scope object.
                 cname = '%s->%s' % (Naming.cur_scope_cname,

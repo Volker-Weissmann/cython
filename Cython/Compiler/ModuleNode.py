@@ -26,6 +26,8 @@ from . import Options
 from . import TypeSlots
 from . import PyrexTypes
 from . import Pythran
+from . import Errors
+from . import DebugFlags
 
 from .Errors import error, warning
 from .PyrexTypes import py_object_type
@@ -152,13 +154,13 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
                 and entry.is_type and entry.type.is_enum):
                     entry.type.create_type_wrapper(env)
 
-    def process_implementation(self, options, result):
+    def process_implementation(self, options, result, debug_transform):
         env = self.scope
         env.return_type = PyrexTypes.c_void_type
         self.referenced_modules = []
         self.find_referenced_modules(env, self.referenced_modules, {})
         self.sort_cdef_classes(env)
-        self.generate_c_code(env, options, result)
+        self.generate_c_code(env, options, result, debug_transform)
         self.generate_h_code(env, options, result)
         self.generate_api_code(env, options, result)
 
@@ -364,7 +366,7 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
             i_code.putln("pass")
         i_code.dedent()
 
-    def generate_c_code(self, env, options, result):
+    def generate_c_code(self, env, options, result, debug_transform):
         modules = self.referenced_modules
 
         if Options.annotate or options.annotate:
@@ -450,6 +452,17 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
             f.close()
         result.c_file_generated = 1
         if options.gdb_debug:
+            #note: the following is nearly equivalent to debug_transform(self)
+            #breakpoint()
+            #if isinstance(self, ModuleNode.ModuleNode):
+            debug_transform.current_directives = self.directives
+            #assert debug_transform.dispatch_table == {}
+            #handler_method = debug_transform.find_handler(self)
+            #debug_transform.dispatch_table[type(self)] = handler_method
+            #handler_method(self)
+            debug_transform.code = code
+            debug_transform.visit_ModuleNode(self)
+            #debug_transform(self) ee182238c00059e328b591b3439dd71d
             self._serialize_lineno_map(env, rootwriter)
         if Options.annotate or options.annotate:
             self._generate_annotations(rootwriter, result, options)
@@ -3081,6 +3094,14 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
     def mod_init_func_cname(self, prefix, env):
         # from PEP483
         return self.punycode_module_name(prefix, env.module_name)
+
+    # Returns the name of the C-function that corresponds to the module initialisation.
+    # (module initialisation == the cython code outside of functions)
+    # Note that this should never be the name of a wrapper and always the name of the
+    # function containing the actual code. Otherwise, cygdb will experience problems.
+    def module_init_func_cname(self):
+        env = self.scope
+        return self.mod_init_func_cname(Naming.pymodule_exec_func_cname, env)
 
     def generate_pymoduledef_struct(self, env, code):
         if env.doc:

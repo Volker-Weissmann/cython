@@ -47,9 +47,9 @@ def parse_pxd_stage_factory(context, scope, module_name):
         return tree
     return parse
 
-def generate_pyx_code_stage_factory(options, result):
+def generate_pyx_code_stage_factory(options, result, debug_transform):
     def generate_pyx_code_stage(module_node):
-        module_node.process_implementation(options, result)
+        module_node.process_implementation(options, result, debug_transform)
         result.compilation_source = module_node.compilation_source
         return result
     return generate_pyx_code_stage
@@ -244,9 +244,13 @@ def create_pyx_pipeline(context, options, result, py=False, exclude_classes=()):
         context.gdb_debug_outputwriter = DebugWriter.CythonDebugWriter(
             options.output_dir)
         debug_transform = [DebugTransform(context, options, result)]
+        debug_transform_func = debug_transform[0]
     else:
         debug_transform = []
+        debug_transform_func = None
 
+    #def generate_pyx_code_stage(module_node):
+    #    module_node.process_implementation(options, result)
     return list(itertools.chain(
         [parse_stage_factory(context)],
         create_pipeline(context, mode, exclude_classes=exclude_classes),
@@ -254,8 +258,8 @@ def create_pyx_pipeline(context, options, result, py=False, exclude_classes=()):
         [inject_pxd_code_stage_factory(context),
          inject_utility_code_stage_factory(context),
          abort_on_errors],
-        debug_transform,
-        [generate_pyx_code_stage_factory(options, result)]))
+        #debug_transform,
+        [generate_pyx_code_stage_factory(options, result, debug_transform_func)]))
 
 def create_pxd_pipeline(context, scope, module_name):
     from .CodeGeneration import ExtractPxdCode
@@ -353,9 +357,22 @@ def run_pipeline(pipeline, source, printtree=True):
                         except KeyError:
                             exec("def %s(phase, data): return phase(data)" % phase_name, exec_ns)
                             run = _pipeline_entry_points[phase_name] = exec_ns[phase_name]
+                    #if "generate_pyx_code_stage_factory" in str(phase):
+                    #    breakpoint()
                     data = run(phase, data)
+                    node = data
+                    try:
+                        if str(type(data)) not in ["<class 'Cython.Compiler.Main.CompilationSource'>", "<class 'Cython.Compiler.Main.CompilationResult'>"]:
+                            for entry in node.scope.entries.values():
+                                if entry.cname == "__pyx_v_8codefile_varA": #"__pyx_n_s_varA":
+                                    pass
+                                    #print("********************************* found somethin")
+                    except:
+                        print("type:", type(data))
+                        raise
                     if DebugFlags.debug_verbose_pipeline:
                         print("    %.3f seconds" % (time() - t))
+                print("PHASE:", phase, "OUTPUT DATA:", type(data))
         except CompileError as err:
             # err is set
             Errors.report_error(err, use_stack=False)

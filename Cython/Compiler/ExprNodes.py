@@ -2305,6 +2305,11 @@ class NameNode(AtomicExprNode):
         if entry.is_pyglobal:
             assert entry.type.is_pyobject, "Python global or builtin not a Python object"
             interned_cname = code.intern_identifier(self.entry.name)
+            #print("###################### interned_cname", interned_cname)
+            #breakpoint()
+            #code.intern_identifier(self.entry.name)
+            #if interned_cname == "__pyx_n_s_varA":
+            #    breakpoint()
             namespace = self.entry.scope.namespace_cname
             if entry.is_member:
                 # if the entry is a member we have to cheat: SetAttr does not work
